@@ -46,14 +46,37 @@ adb shell "mkdir $dir 2>/dev/null || true"
 adb push libs/$abi/$bin $dir
 
 # Upload the shared library
+# Try to find the appropriate library version
+lib_path=""
 if [ -e jni/minicap-shared/aosp/libs/android-$rel/$abi/minicap.so ]; then
-  adb push jni/minicap-shared/aosp/libs/android-$rel/$abi/minicap.so $dir
+  lib_path="jni/minicap-shared/aosp/libs/android-$rel/$abi/minicap.so"
+elif [ -e jni/minicap-shared/aosp/libs/android-$sdk/$abi/minicap.so ]; then
+  lib_path="jni/minicap-shared/aosp/libs/android-$sdk/$abi/minicap.so"
 else
-  adb push jni/minicap-shared/aosp/libs/android-$sdk/$abi/minicap.so $dir
+  # Find the highest available version
+  highest_version=0
+  for version_dir in jni/minicap-shared/aosp/libs/android-*; do
+    if [ -d "$version_dir" ] && [ -e "$version_dir/$abi/minicap.so" ]; then
+      version_num=$(basename "$version_dir" | sed 's/android-//')
+      if [ "$version_num" -gt "$highest_version" ]; then
+        highest_version=$version_num
+        lib_path="$version_dir/$abi/minicap.so"
+      fi
+    fi
+  done
+fi
+
+if [ -n "$lib_path" ]; then
+  echo "Using library: $lib_path"
+  adb push "$lib_path" $dir
+else
+  echo "Error: No compatible minicap.so library found for ABI $abi"
+  exit 1
 fi
 
 # Run!
-adb shell LD_LIBRARY_PATH=$dir $dir/$bin $args "$@"
+echo "Starting minicap with args: $args"
+adb shell "cd $dir && LD_LIBRARY_PATH=$dir ./$bin $args" "$@"
 
 # Clean up
 adb shell rm -r $dir
